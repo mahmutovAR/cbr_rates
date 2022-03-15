@@ -20,4 +20,4 @@ Exchange rate data can be obtained using a telegram bot.
 
 ## Script runs on Python 3.8, with next modules:
 * `calendar`, `datetime`, `os`, `re`, `sys`, `time` (standard library)
-* `argparse`, `bs4`, `urllib`, `schedule`, `sqlalchemy`, `telebot`  (3rd party libraries)
+* `argparse`, `bs4`, `urllib`, `schedule`, `sqlalchemy`, `pytelegrambotapi`  (3rd party libraries)
