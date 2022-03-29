@@ -31,27 +31,38 @@ Base = declarative_base()
 
 
 class MainInfo(Base):
+    """
+    The table with main info about rates: source of information, currencies name, datetime of script running.
+    "scraping_site" is website for getting exchange rates, default 'www.cbr.ru'
+    "scraping_datetime" is date&time of script running
+    "out_usd" for class USD
+    "out_eur" for class EUR
+    """
     __tablename__ = 'Scraping Info'
-    # table with main info about rates: source of information, currencies name, datetime of script running
     id = Column(Integer, primary_key=True, autoincrement=True)
-    scraping_site = Column(String, default=request_url[:19])  # website for getting exchange rates, default 'www.cbr.ru'
-    scraping_datetime = Column(String, default=datetime.datetime.now())  # date&time of script running
+    scraping_site = Column(String, default=request_url[:19])
+    scraping_datetime = Column(String, default=datetime.datetime.now())
     currency_1 = Column(String, default='USD')
     currency_2 = Column(String, default='EUR')
-    out_usd = relationship('USD', backref='main_table_data')  # for class USD
-    out_eur = relationship('EUR', backref='main_table_data')  # for class EUR
+    out_usd = relationship('USD', backref='main_table_data')
+    out_eur = relationship('EUR', backref='main_table_data')
 
 
 class Currency(Base):
+    """
+    The table for each currency includes rate on a given by user date, date from the source,
+    the difference and the dynamics of change is given relatively to the previous rate on the date given by the source.
+    "request_date" is requesting date of exchange rates given by user
+    "currency_rate" is rate at requesting date
+    "date_rate_site" is date of exchange rates given by source (website)
+    "currency_dynamics" displays that rate increased, decreased or has no change in order to its previous value
+    """
     __abstract__ = True
-    # table for each currency includes rate on a given by user date, date from the source
-    # the difference and the dynamics of change is given relatively to the previous rate on the date given by the source
     id = Column(Integer, primary_key=True)
-    request_date = Column(String, default=None)  # requesting date of exchange rates given by user
-    currency_rate = Column(Float, default=None)  # rate at requesting date
-    date_rate_site = Column(String, default=None)  # date of exchange rates given by source (website)
+    request_date = Column(String, default=None)
+    currency_rate = Column(Float, default=None)
+    date_rate_site = Column(String, default=None)
     currency_dynamics = Column(String, default=None)
-    # rate increased, decreased or has no change in order to its previous value
     currency_difference = Column(Float, default=None)
 
 
@@ -169,8 +180,8 @@ def get_info_for_tlg_bot(currency_name: type) -> float and str and float and str
 
 def telegram_bot():
     """Starts telegram bot. Help, display rates and test function are realised."""
-    telegram_settings = os.path.join(('\\').join(script_path.split('\\')[:-1]), 'telegram_settings', 'name_token.txt')
-    # gets previous folder for 'cbr_usd_eur.py' and adds folder 'telegram_settings' and file 'name_token.txt'
+    telegram_settings = os.path.join(('/').join(script_path.split('/')[:-1]), 'telegram_settings', 'name_token.txt')
+    # gets previous folder for 'cbr_usd_eur.py' and opens file 'name_token.txt' in the folder 'telegram_settings'
     with open(telegram_settings) as t_bot:
         bot_name, bot_token = t_bot
     bot_name = bot_name.rstrip()
@@ -253,7 +264,7 @@ def main():
         full path to the "cbr_usd_eur.py"
         full path to the database in nested folder
         database functions
-        class definition
+        class definitions
     Secondly, main arguments are defined from the command line by using argparse module:
         mode ('schedule', 'period', 'schedule_bot', 'telegrambot')
         request period (optional)
@@ -293,12 +304,12 @@ def main():
                                      description='''
         %(prog)s requests exchanged rates of USD and EUR from www.cbr.ru.
         Reference information about script:
-          schedule = receiving exchange rates according to the schedule, every day at 12:00, and
+          schedule = gets exchange rates according to the schedule, every day at 12:00, and
           entering the data into a table in the database
-          period = receiving exchange rates for the given month {MM.YYYY} and
+          period "MM.YYYY" = gets exchange rates for the given month "MM.YYYY" and
           entering the data into a table in the database
-          schedule_bot = running of "schedule" mode and telegram bot launcher
-          telegrambot = running of telegram bot launcher
+          schedule_bot = runs "schedule" mode and telegram bot launcher
+          telegrambot = runs telegram bot launcher only
           ''')
     parser.add_argument('mode', type=str, help='Choose the mode',
                         choices=['schedule', 'period', 'schedule_bot', 'telegrambot'])
