@@ -180,13 +180,11 @@ def get_info_for_tlg_bot(currency_name: type) -> float and str and float and str
 
 def telegram_bot():
     """Starts telegram bot. Help, display rates and test function are realised."""
-    telegram_settings = os.path.join(('/').join(script_path.split('/')[:-1]), 'telegram_settings', 'name_token.txt')
+    telegram_settings = os.path.join('/'.join(script_path.split('/')[:-1]), 'telegram_settings', 'name_token.txt')
     # gets previous folder for 'cbr_usd_eur.py' and opens file 'name_token.txt' in the folder 'telegram_settings'
     with open(telegram_settings) as t_bot:
         bot_name, bot_token = t_bot
-    bot_name = bot_name.rstrip()
     bot_token = bot_token.rstrip()
-    print(f'Telegram bot name is {bot_name}')
     tlg_bot = telebot.TeleBot(bot_token)
 
     @tlg_bot.message_handler(commands=['start'])

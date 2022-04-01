@@ -51,14 +51,12 @@ class Currency(Base):
     the difference and the dynamics of change is given relatively to the previous rate on the date given by the source.
     "request_date" is requesting date of exchange rates given by user
     "currency_rate" is rate at requesting date
-    "date_rate_site" is date of exchange rates given by source (website)
     "currency_dynamics" displays that rate increased, decreased or has no change in order to its previous value
     """
     __abstract__ = True
     id = Column(Integer, primary_key=True)
     request_date = Column(String, default=None)
     currency_rate = Column(Float, default=None)
-    date_rate_site = Column(String, default=None)
     currency_dynamics = Column(String, default=None)
     currency_difference = Column(Float, default=None)
 
@@ -103,9 +101,9 @@ def add_data_to_db(input_date: str, usd_rate: float, eur_rate: float) -> 'sqlite
     usd_dyn, usd_diff = edit_currency_dynamics(usd_rate, usd_prev)
     eur_dyn, eur_diff = edit_currency_dynamics(eur_rate, eur_prev)
     data_inf = MainInfo(scraping_datetime=py_run_datetime)
-    data_usd = USD(main_table_data=data_inf, date_rate_site=input_date, currency_rate=usd_rate,
+    data_usd = USD(main_table_data=data_inf, currency_rate=usd_rate,
                    currency_dynamics=usd_dyn, currency_difference=usd_diff, request_date=input_date)
-    data_eur = EUR(main_table_data=data_inf, date_rate_site=input_date, currency_rate=eur_rate,
+    data_eur = EUR(main_table_data=data_inf, currency_rate=eur_rate,
                    currency_dynamics=eur_dyn, currency_difference=eur_diff, request_date=input_date)
     session.add_all([data_inf, data_usd, data_eur])
     session.commit()
@@ -116,7 +114,7 @@ def get_previous_rate(currency_name: type, req_date: str) -> float:
      without taking into account the requested date of the rate."""
     prev_rate = None
     try:
-        prev_rate_info = session.query(currency_name).filter(currency_name.date_rate_site != req_date).order_by(
+        prev_rate_info = session.query(currency_name).filter(currency_name.request_date != req_date).order_by(
             currency_name.id.desc()).first()  # getting last rate with not {req_date} date
         prev_rate = prev_rate_info.currency_rate
     except Exception as err:
@@ -133,14 +131,14 @@ def get_last_rate(currency_name: type) -> float and str:
         last_row = session.query(currency_name).count()  # number of the last row in table
         last_data = session.query(currency_name).get(last_row)  # full info from the last row in table
         last_rate = last_data.currency_rate  # last given currency_rate in the table
-        last_rate_date = last_data.date_rate_site  # last given date_rate_site in the table
+        last_rate_date = last_data.request_date  # last given request_date in the table
     except Exception as err:
         sys.exit(f'Error in getting last rates:\n{err}')
     finally:
         return last_rate, last_rate_date
 
 
-def get_rate_xml(requesting_date: str, currency_name: str) -> float:  # stable
+def get_rate_xml(requesting_date: str, currency_name: str) -> float:
     """Scrapes URL for getting rate of the given currency and date of rating."""
     scraping_url = f'https://cbr.ru/scripts/XML_daily.asp?date_req={requesting_date}'
     try:
@@ -199,6 +197,67 @@ def scrapy_period(from_date: str, to_date: str) -> 'sqlite':
         sys.exit(f'Scrapy failed:\n{err}')
 
 
+def get_info_for_tlg_bot(currency_name: type) -> float and str and float and str:
+    """Returns from the appropriate table last inputted data:
+    rate, date of rating, difference from the previous value, dynamics of rate changing."""
+    last_rate = None
+    last_rate_date = None
+    last_rate_diff = None
+    last_rate_dyn = None
+    try:
+        last_row = session.query(currency_name).count()  # number of the last row in table
+        last_data = session.query(currency_name).get(last_row)  # full info from the last row in table
+        last_rate = last_data.currency_rate  # last given currency_rate in the table
+        last_rate_date = last_data.request_date  # last given request_date in the table
+        last_rate_diff = last_data.currency_difference
+        last_rate_dyn = last_data.currency_dynamics
+    except Exception as err:
+        sys.exit(f'Error in getting data for telegram bot:\n{err}')
+    finally:
+        return last_rate, last_rate_date, last_rate_diff, last_rate_dyn
+
+
+def telegram_bot():
+    """Starts telegram bot. Help, display rates and test function are realised."""
+    telegram_settings = os.path.join('/'.join(script_path.split('/')[:-1]), 'telegram_settings', 'name_token.txt')
+    # gets previous folder for 'cbr_usd_eur.py' and opens file 'name_token.txt' in the folder 'telegram_settings'
+    with open(telegram_settings) as t_bot:
+        bot_name, bot_token = t_bot
+    bot_token = bot_token.rstrip()
+    tlg_bot = telebot.TeleBot(bot_token)
+
+    @tlg_bot.message_handler(commands=['start'])
+    def start_command(message):
+        tlg_bot.send_message(
+            message.chat.id,
+            'Greetings!\nEnter /rates to get exchange rates or /F1 to run the function F1.\n' +
+            'To get help press /help.'
+        )
+
+    @tlg_bot.message_handler(commands=['rates'])
+    def rates_command(message):
+        """Displays last inputted information about two currencies USD and EUR"""
+        usd_rate, usd_date, usd_diff, usd_dyn = get_info_for_tlg_bot(USD)
+        eur_rate, eur_date, eur_diff, eur_dyn = get_info_for_tlg_bot(EUR)
+        tlg_bot.send_message(message.chat.id, f'USD on {usd_date} is {usd_rate},'
+                                              f' {usd_dyn} by {abs(usd_diff)}\n'
+                                              f'EUR on {eur_date} is {eur_rate},'
+                                              f' {eur_dyn} by {abs(eur_diff)}')
+
+    @tlg_bot.message_handler(commands=['F1'])
+    def query_command(message):
+        """Test function."""
+        tlg_bot.send_message(message.chat.id, "The function F1 is running..")
+
+    @tlg_bot.message_handler(commands=['help'])
+    def help_command(message):
+        """Help mode."""
+        tlg_bot.send_message(message.chat.id, '1) To run function_1 press /F1.\n'
+                                              '2) To run function_2 press /F2.\n...\n')
+
+    tlg_bot.polling(none_stop=True)
+
+
 def main():
     """This is the main function of the script.
         Firstly, are given few constant arguments:
@@ -248,7 +307,7 @@ def main():
             Reference information about script:
               schedule = gets exchange rates according to the schedule, every day at 12:00, and
               entering the data into a table in the database
-              period "DD/MM/YYYY-DD/MM/YYYY" = gets exchange rates for the given period 
+              period "DD/MM/YYYY-DD/MM/YYYY" = gets exchange rates for the given period
               from "DD/MM/YYYY" to "DD/MM/YYYY" and enters the data into a table in the database
               schedule_bot = runs "schedule" mode and telegram bot launcher
               telegrambot = runs telegram bot launcher only
