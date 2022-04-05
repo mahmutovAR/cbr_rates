@@ -15,7 +15,6 @@ from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
 # for telegram part:
 import telebot
-from telebot import types
 
 
 request_url = 'https://www.cbr.ru/scripts/XML_daily'
@@ -38,6 +37,7 @@ class MainInfo(Base):
     __tablename__ = 'Parsing XML'
     id = Column(Integer, primary_key=True, autoincrement=True)
     scraping_site = Column(String, default=request_url)
+    request_date = Column(String, default=None)
     scraping_datetime = Column(String, default=datetime.datetime.now())
     currency_1 = Column(String, default='USD')
     currency_2 = Column(String, default='EUR')
@@ -55,56 +55,39 @@ class Currency(Base):
     """
     __abstract__ = True
     id = Column(Integer, primary_key=True)
-    request_date = Column(String, default=None)
     currency_rate = Column(Float, default=None)
     currency_dynamics = Column(String, default=None)
-    currency_difference = Column(Float, default=None)
 
 
 class USD(Currency):
     __tablename__ = 'USD rates'
-    usd_scraping_datetime = Column(String, ForeignKey('Parsing XML.scraping_datetime'))
+    request_date = Column(String, ForeignKey('Parsing XML.request_date'))
 
 
 class EUR(Currency):
     __tablename__ = 'EUR rates'
-    eur_scraping_datetime = Column(String, ForeignKey('Parsing XML.scraping_datetime'))
+    request_date = Column(String, ForeignKey('Parsing XML.request_date'))
 
 
-def add_xml_rates_to_db(request_date: str) -> 'sqlite':
+def get_rates_and_add_to_db(request_date: str) -> 'sqlite':
     """Adds exchange rates, difference and dynamics of changing to the appropriate tables in the database."""
-    py_run_datetime = datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
     usd_rate = get_rate_xml(request_date, 'USD')
     eur_rate = get_rate_xml(request_date, 'EUR')
+    add_data_to_db(request_date, usd_rate, eur_rate)
 
+
+def add_data_to_db(request_date: str, usd_rate: float, eur_rate: float) -> 'sqlite':
+    """Adds exchange rates, difference and dynamics of changing to the appropriate tables in the database."""
+    py_run_datetime = datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
     usd_prev = get_previous_rate(USD, request_date)
     eur_prev = get_previous_rate(EUR, request_date)
 
     Base.metadata.create_all(db_engine)
-    usd_dyn, usd_diff = edit_currency_dynamics(usd_rate, usd_prev)
-    eur_dyn, eur_diff = edit_currency_dynamics(eur_rate, eur_prev)
-    data_inf = MainInfo(scraping_datetime=py_run_datetime)
-    data_usd = USD(main_table_data=data_inf, currency_rate=usd_rate, currency_dynamics=usd_dyn,
-                   currency_difference=usd_diff, request_date=request_date)
-    data_eur = EUR(main_table_data=data_inf, currency_rate=eur_rate, currency_dynamics=eur_dyn,
-                   currency_difference=eur_diff, request_date=request_date)
-    session.add_all([data_inf, data_usd, data_eur])
-    session.commit()
-
-
-def add_data_to_db(input_date: str, usd_rate: float, eur_rate: float) -> 'sqlite':
-    """Adds exchange rates, difference and dynamics of changing to the appropriate tables in the database."""
-    py_run_datetime = datetime.datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-    usd_prev = get_previous_rate(USD, input_date)
-    eur_prev = get_previous_rate(EUR, input_date)
-    Base.metadata.create_all(db_engine)
-    usd_dyn, usd_diff = edit_currency_dynamics(usd_rate, usd_prev)
-    eur_dyn, eur_diff = edit_currency_dynamics(eur_rate, eur_prev)
-    data_inf = MainInfo(scraping_datetime=py_run_datetime)
-    data_usd = USD(main_table_data=data_inf, currency_rate=usd_rate,
-                   currency_dynamics=usd_dyn, currency_difference=usd_diff, request_date=input_date)
-    data_eur = EUR(main_table_data=data_inf, currency_rate=eur_rate,
-                   currency_dynamics=eur_dyn, currency_difference=eur_diff, request_date=input_date)
+    usd_dyn = edit_currency_dynamics(usd_rate, usd_prev)
+    eur_dyn = edit_currency_dynamics(eur_rate, eur_prev)
+    data_inf = MainInfo(scraping_datetime=py_run_datetime, request_date=request_date)
+    data_usd = USD(main_table_data=data_inf, currency_rate=usd_rate, currency_dynamics=usd_dyn)
+    data_eur = EUR(main_table_data=data_inf, currency_rate=eur_rate, currency_dynamics=eur_dyn)
     session.add_all([data_inf, data_usd, data_eur])
     session.commit()
 
@@ -123,19 +106,17 @@ def get_previous_rate(currency_name: type, req_date: str) -> float:
         return prev_rate
 
 
-def get_last_rate(currency_name: type) -> float and str:
+def get_rate_on_date(currency_name: type, input_date: str) -> float:
     """Returns from the appropriate table last inputted rate of given currency and date of rating from the source."""
-    last_rate = None
-    last_rate_date = None
+    rate_on_date = None
     try:
-        last_row = session.query(currency_name).count()  # number of the last row in table
-        last_data = session.query(currency_name).get(last_row)  # full info from the last row in table
-        last_rate = last_data.currency_rate  # last given currency_rate in the table
-        last_rate_date = last_data.request_date  # last given request_date in the table
+        query_data = session.query(currency_name).filter(currency_name.request_date == input_date).order_by(
+            currency_name.id.desc()).first()
+        rate_on_date = query_data.currency_rate
     except Exception as err:
-        sys.exit(f'Error in getting last rates:\n{err}')
+        sys.exit(f'Error in get_rate_on_date:\n{err}')
     finally:
-        return last_rate, last_rate_date
+        return rate_on_date
 
 
 def get_rate_xml(requesting_date: str, currency_name: str) -> float:
@@ -151,18 +132,18 @@ def get_rate_xml(requesting_date: str, currency_name: str) -> float:
         sys.exit(f'Scrapy failed:\n{err}')
 
 
-def edit_currency_dynamics(current_rate: float, previous_rate: float = 0) -> str and float:
+def edit_currency_dynamics(current_rate: float, previous_rate: float = 0) -> str or None:
     """Returns detailed description of the given currency rate change:
     difference between rates and dynamics of the change."""
     if previous_rate is None:
-        return None, None
+        return None
     else:
         if current_rate > previous_rate:
-            return 'increased', format((current_rate-previous_rate), '.2f')
+            return f"+{format((current_rate-previous_rate), '.2f')}"
         elif current_rate < previous_rate:
-            return 'decreased', format((current_rate-previous_rate), '.2f')
+            return f"{format((current_rate-previous_rate), '.2f')}"
         else:
-            return 'no change', 0
+            return '0'
 
 
 def scrapy_period(from_date: str, to_date: str) -> 'sqlite':
@@ -197,24 +178,22 @@ def scrapy_period(from_date: str, to_date: str) -> 'sqlite':
         sys.exit(f'Scrapy failed:\n{err}')
 
 
-def get_info_for_tlg_bot(currency_name: type) -> float and str and float and str:
+def last_rate_for_tlg(currency_name: type) -> float and str and str:
     """Returns from the appropriate table last inputted data:
     rate, date of rating, difference from the previous value, dynamics of rate changing."""
     last_rate = None
     last_rate_date = None
-    last_rate_diff = None
     last_rate_dyn = None
     try:
         last_row = session.query(currency_name).count()  # number of the last row in table
         last_data = session.query(currency_name).get(last_row)  # full info from the last row in table
         last_rate = last_data.currency_rate  # last given currency_rate in the table
         last_rate_date = last_data.request_date  # last given request_date in the table
-        last_rate_diff = last_data.currency_difference
         last_rate_dyn = last_data.currency_dynamics
     except Exception as err:
         sys.exit(f'Error in getting data for telegram bot:\n{err}')
     finally:
-        return last_rate, last_rate_date, last_rate_diff, last_rate_dyn
+        return last_rate, last_rate_date, last_rate_dyn
 
 
 def telegram_bot():
@@ -230,31 +209,51 @@ def telegram_bot():
     def start_command(message):
         tlg_bot.send_message(
             message.chat.id,
-            'Greetings!\nEnter /rates to get exchange rates or /F1 to run the function F1.\n' +
-            'To get help press /help.'
+            'Greetings!\nEnter /rates to get last exchange rates from database\n'
+            ' or /rates_on DD/MM/YYYY to get rates on given date.\n' +
+            'To get help enter /help.'
         )
-
-    @tlg_bot.message_handler(commands=['rates'])
-    def rates_command(message):
-        """Displays last inputted information about two currencies USD and EUR"""
-        usd_rate, usd_date, usd_diff, usd_dyn = get_info_for_tlg_bot(USD)
-        eur_rate, eur_date, eur_diff, eur_dyn = get_info_for_tlg_bot(EUR)
-        tlg_bot.send_message(message.chat.id, f'USD on {usd_date} is {usd_rate},'
-                                              f' {usd_dyn} by {abs(usd_diff)}\n'
-                                              f'EUR on {eur_date} is {eur_rate},'
-                                              f' {eur_dyn} by {abs(eur_diff)}')
-
-    @tlg_bot.message_handler(commands=['F1'])
-    def query_command(message):
-        """Test function."""
-        tlg_bot.send_message(message.chat.id, "The function F1 is running..")
 
     @tlg_bot.message_handler(commands=['help'])
     def help_command(message):
         """Help mode."""
-        tlg_bot.send_message(message.chat.id, '1) To run function_1 press /F1.\n'
-                                              '2) To run function_2 press /F2.\n...\n')
+        tlg_bot.send_message(message.chat.id, '1) To get last rates input /rates.\n'
+                                              '2) To get rates for a specific date input /rates_on DD/MM/YYYY\n'
+                                              'for example, /rates_on 01/02/2022')
 
+    @tlg_bot.message_handler(commands=['rates'])
+    def rates_command(message):
+        """Displays last inputted to the database information about exchange rates of USD and EUR"""
+        usd_rate, usd_date, usd_dyn = last_rate_for_tlg(USD)
+        eur_rate, eur_date, eur_dyn = last_rate_for_tlg(EUR)
+        if usd_rate is None and usd_date is None:
+            tlg_bot.send_message(message.chat.id, f'Error! There is no data for USD rates')
+        else:
+            tlg_bot.send_message(message.chat.id, f'USD on {usd_date} is {usd_rate} ({usd_dyn})')
+        if eur_rate is None and eur_date is None:
+            tlg_bot.send_message(message.chat.id, f'Error! There is no data for EUR rates')
+        else:
+            tlg_bot.send_message(message.chat.id, f'EUR on {eur_date} is {eur_rate} ({eur_dyn})')
+
+    def get_user_date(input_date):
+        return input_date.split()[-1]
+
+    @tlg_bot.message_handler(commands=['rates_on'])
+    def rates_on_date_command(message):
+        """Displays exchange rates of USD and EUR on inputted date"""
+        user_date = str(get_user_date(message.text))
+        usd_rate_on_date = get_rate_on_date(USD, user_date)
+        eur_rate_on_date = get_rate_on_date(EUR, user_date)
+        if usd_rate_on_date is None:
+            tlg_bot.send_message(message.chat.id, f'Error! There is no USD rates on {user_date}')
+        else:
+            tlg_bot.send_message(message.chat.id, f'USD on {user_date} was {usd_rate_on_date}')
+        if eur_rate_on_date is None:
+            tlg_bot.send_message(message.chat.id, f'Error! There is no EUR rates on {user_date}')
+        else:
+            tlg_bot.send_message(message.chat.id, f'EUR on {user_date} was {eur_rate_on_date}')
+
+    # tlg_bot.infinity_polling()
     tlg_bot.polling(none_stop=True)
 
 
@@ -269,11 +268,11 @@ def main():
             mode ('schedule', 'period', 'schedule_bot', 'telegrambot')
             request period (optional)
         For 'schedule' is executed:
-            add_xml_rates_to_db
+            get_rates_and_add_to_db
         For 'period' is executed:
             scrapy_month
         For 'schedule_bot' are executed next functions:
-            add_rates_to_db
+            get_rates_and_add_to_db
             telegram_bot
         For 'telegrambot' is executed:
             telegram_bot
@@ -283,7 +282,7 @@ def main():
         if 'schedule' or 'schedule_bot':
             if 'schedule_bot':
                 telegram_bot()
-            add_xml_rates_to_db()
+            get_rates_and_add_to_db()
         elif 'period':
             scrapy_period()
         else:  # 'telegrambot'
@@ -324,7 +323,7 @@ def main():
         if mode == 'schedule_bot':
             telegram_bot()
 
-        schedule.every().day.at("12:00").do(add_rates_to_db)
+        schedule.every().day.at("12:00").do(get_rates_and_add_to_db)
         while True:
             schedule.run_pending()
             time.sleep(1)
