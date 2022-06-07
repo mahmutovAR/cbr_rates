@@ -16,9 +16,8 @@ depending on the request for a specific date or period
         enters the data into a table in the database
 * `period DD/MM/YYYY-DD/MM/YYYY` gets exchange rates for the given period
 from "DATE_1" to "DATE_2" and enters the data into the tables in the database
-* `schedule_bot` runs "schedule" mode and telegram bot launcher
-* `telegrambot` runs telegram bot launcher only
+* `telegrambot` runs telegram bot launcher
 
-## Script runs on Python 3.8 with next modules:
-* `calendar`, `datetime`, `os`, `re`, `sys`, `time` (standard libraries)
+## Script runs on Python 3.9 with next modules:
+* `datetime`, `os`, `pathlib`, `sys`, `time` (standard libraries)
 * `argparse`, `beautifulsoup4`, `schedule`, `sqlalchemy`, `pytelegrambotapi`, `urllib3` (3rd party libraries)
